@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Joueur - Apéro Quiz</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #020617;
+      color: #e5e7eb;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+      padding: 12px;
+    }
+    #container {
+      width: 100%;
+      max-width: 480px;
+      background: #0b1120;
+      border-radius: 16px;
+      padding: 16px 18px 20px;
+      border: 1px solid #1f2937;
+      box-shadow: 0 12px 35px rgba(0,0,0,0.6);
+    }
+    h1 { margin-top: 0; font-size: 1.4rem; }
+    .small { font-size: 0.8rem; color: #9ca3af; }
+    input[type="text"] {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 999px;
+      border: 1px solid #374151;
+      background: #020617;
+      color: #e5e7eb;
+      margin-bottom: 8px;
+    }
+    button {
+      border-radius: 999px;
+      border: none;
+      padding: 8px 16px;
+      font-weight: 600;
+      cursor: pointer;
+      background: #22c55e;
+      color: #022c22;
+      box-shadow: 0 8px 18px rgba(34,197,94,0.35);
+    }
+    button:active { transform: translateY(1px); box-shadow: none; }
+    .timer {
+      font-size: 2.2rem;
+      text-align: center;
+      margin: 8px 0 8px;
+    }
+    .timer.warning { color: #f97316; }
+    .timer.danger { color: #ef4444; }
+    .question-box {
+      margin-top: 10px;
+      padding: 12px;
+      border-radius: 12px;
+      background: #020617;
+      border: 1px solid #1f2937;
+    }
+    .question-text { font-size: 1.1rem; margin-bottom: 10px; }
+    .options { display: flex; flex-direction: column; gap: 6px; }
+    .opt-btn {
+      border-radius: 999px;
+      border: 1px solid #374151;
+      background: #111827;
+      color: #e5e7eb;
+      padding: 8px 10px;
+      font-size: 0.95rem;
+      text-align: left;
+    }
+    .opt-btn.selected {
+      border-color: #22c55e;
+      background: rgba(34,197,94,0.16);
+    }
+    textarea {
+      width: 100%;
+      min-height: 80px;
+      border-radius: 10px;
+      border: 1px solid #374151;
+      background: #020617;
+      color: #e5e7eb;
+      padding: 8px 10px;
+    }
+    textarea::placeholder { color: #4b5563; }
+    .status {
+      font-size: 0.8rem;
+      margin-top: 6px;
+      color: #9ca3af;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <h1>Apéro Quiz – Joueur</h1>
+
+    <div id="joinArea">
+      <p class="small">Entre ton prénom / pseudo pour rejoindre la partie :</p>
+      <input type="text" id="nameInput" placeholder="Ex : Chloé" />
+      <button id="joinBtn">Rejoindre 🎉</button>
+    </div>
+
+    <div id="gameArea" style="display:none;">
+      <div class="small" id="infoTop"></div>
+      <div class="timer" id="timer">00:00</div>
+
+      <div id="questionBox" class="question-box">
+        <div class="question-text" id="questionText">En attente de la première question…</div>
+        <div id="options" class="options"></div>
+        <div id="openArea" style="display:none;">
+          <textarea id="openInput" placeholder="Écris ta réponse ici…"></textarea>
+          <button id="sendOpenBtn" style="margin-top:6px;">Envoyer</button>
+        </div>
+        <div class="status" id="status"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+
+    const joinArea = document.getElementById("joinArea");
+    const nameInput = document.getElementById("nameInput");
+    const joinBtn = document.getElementById("joinBtn");
+
+    const gameArea = document.getElementById("gameArea");
+    const infoTop = document.getElementById("infoTop");
+    const timerEl = document.getElementById("timer");
+    const questionTextEl = document.getElementById("questionText");
+    const optionsEl = document.getElementById("options");
+    const openArea = document.getElementById("openArea");
+    const openInput = document.getElementById("openInput");
+    const sendOpenBtn = document.getElementById("sendOpenBtn");
+    const statusEl = document.getElementById("status");
+
+    let joined = false;
+    let currentQuestionIndex = null;
+    let alreadyAnswered = false;
+
+    function formatTime(sec) {
+      const m = Math.floor(sec / 60);
+      const s = sec % 60;
+      return (m < 10 ? "0" + m : m) + ":" + (s < 10 ? "0" + s : s);
+    }
+
+    joinBtn.addEventListener("click", () => {
+      const name = nameInput.value.trim();
+      if (!name) return alert("Entre un prénom/pseudo.");
+      socket.emit("joinPlayer", name);
+      joined = true;
+      joinArea.style.display = "none";
+      gameArea.style.display = "block";
+    });
+
+    socket.on("state", (state) => {
+      render(state);
+    });
+
+    function render(state) {
+      timerEl.textContent = formatTime(state.remaining || 0);
+      timerEl.classList.remove("warning", "danger");
+      if (state.remaining <= 10 && state.remaining > 0) {
+        timerEl.classList.add("danger");
+      } else if (state.remaining <= 30 && state.remaining > 0) {
+        timerEl.classList.add("warning");
+      }
+
+      if (!joined) return;
+
+      if (!state.started && state.phase === "waiting") {
+        infoTop.textContent = "En attente du démarrage du quiz…";
+        questionTextEl.textContent = "Patiente, le quiz va bientôt commencer.";
+        optionsEl.innerHTML = "";
+        openArea.style.display = "none";
+        statusEl.textContent = "";
+        return;
+      }
+
+      if (state.phase === "pause") {
+        infoTop.textContent = `⏸️ Pause apéro – la manche ${state.blockNumber} reprendra bientôt.`;
+        questionTextEl.textContent = "Profite de la pause, le quiz continue automatiquement après !";
+        optionsEl.innerHTML = "";
+        openArea.style.display = "none";
+        statusEl.textContent = "";
+        return;
+      }
+
+      if (state.phase === "finished") {
+        infoTop.textContent = "Quiz terminé 🎉";
+        questionTextEl.textContent = "Merci d'avoir joué !";
+        optionsEl.innerHTML = "";
+        openArea.style.display = "none";
+        statusEl.textContent = "";
+        return;
+      }
+
+      if (state.phase === "question" && state.question) {
+        infoTop.textContent = `Manche ${state.blockNumber} – Question ${state.currentIndex + 1}/${state.totalQuestions}`;
+        questionTextEl.textContent = state.question.text;
+        currentQuestionIndex = state.currentIndex;
+        alreadyAnswered = false;
+        statusEl.textContent = "Tu peux répondre maintenant.";
+
+        optionsEl.innerHTML = "";
+        openArea.style.display = "none";
+
+        if (state.question.type === "mcq" && state.question.options) {
+          state.question.options.forEach((opt, idx) => {
+            const btn = document.createElement("button");
+            btn.className = "opt-btn";
+            btn.textContent = String.fromCharCode(65 + idx) + ". " + opt;
+            btn.addEventListener("click", () => {
+              if (alreadyAnswered) return;
+              alreadyAnswered = true;
+              socket.emit("answer", { questionIndex: currentQuestionIndex, answer: idx });
+              document.querySelectorAll(".opt-btn").forEach(b => b.classList.remove("selected"));
+              btn.classList.add("selected");
+              statusEl.textContent = "Réponse envoyée ✅";
+            });
+            optionsEl.appendChild(btn);
+          });
+        } else if (state.question.type === "open") {
+          openArea.style.display = "block";
+          openInput.value = "";
+          sendOpenBtn.onclick = () => {
+            if (alreadyAnswered) return;
+            const val = openInput.value.trim();
+            if (!val) return;
+            alreadyAnswered = true;
+            socket.emit("answer", { questionIndex: currentQuestionIndex, answer: val });
+            statusEl.textContent = "Réponse envoyée ✅";
+          };
+        }
+      }
+    }
+  </script>
+</body>
+</html>

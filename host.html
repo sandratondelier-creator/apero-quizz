@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Host - Apéro Quiz</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #020617;
+      color: #e5e7eb;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+      padding: 16px;
+    }
+    #container {
+      width: 100%;
+      max-width: 900px;
+      background: #0b1120;
+      border-radius: 16px;
+      padding: 20px 24px;
+      border: 1px solid #1f2937;
+      box-shadow: 0 20px 45px rgba(0,0,0,0.6);
+    }
+    h1 { margin-top: 0; }
+    .timer {
+      font-size: 3rem;
+      text-align: center;
+      margin: 8px 0 12px;
+    }
+    .timer.warning { color: #f97316; }
+    .timer.danger { color: #ef4444; }
+    .question-box {
+      padding: 14px 16px;
+      border-radius: 12px;
+      background: radial-gradient(circle at top left, #111827, #020617);
+      border: 1px solid #1f2937;
+      margin-top: 10px;
+    }
+    .question-text {
+      font-size: 1.4rem;
+      margin-bottom: 10px;
+    }
+    .options { list-style: none; padding: 0; margin: 0; }
+    .options li {
+      margin-bottom: 6px;
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: 1px solid #1f2937;
+    }
+    .badge {
+      display: inline-flex;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #111827;
+      border: 1px solid #1f2937;
+      font-size: 0.8rem;
+      margin-right: 6px;
+    }
+    .badge.orange {
+      background: rgba(249,115,22,0.15);
+      border-color: #f9731633;
+      color: #fed7aa;
+    }
+    .badge.blue {
+      background: rgba(59,130,246,0.15);
+      border-color: #3b82f633;
+      color: #bfdbfe;
+    }
+    .badge.green {
+      background: rgba(34,197,94,0.15);
+      border-color: #22c55e33;
+      color: #bbf7d0;
+    }
+    .small { font-size: 0.85rem; color: #9ca3af; }
+    button {
+      border-radius: 999px;
+      border: none;
+      padding: 8px 16px;
+      font-weight: 600;
+      cursor: pointer;
+      background: #22c55e;
+      color: #022c22;
+      box-shadow: 0 8px 18px rgba(34,197,94,0.35);
+    }
+    button:active { transform: translateY(1px); box-shadow: none; }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <h1>Apéro Quiz – Animateur</h1>
+    <p class="small">
+      1️⃣ Lance le serveur avec <code>npm start</code>.<br />
+      2️⃣ Ouvre cette page : <code>/host.html</code>.<br />
+      3️⃣ Les joueurs rejoignent via <code>/player.html</code> sur leur téléphone (même WiFi).
+    </p>
+
+    <button id="startBtn">Démarrer le quiz 🎉</button>
+
+    <p class="small" id="playersInfo"></p>
+
+    <div id="phaseInfo" class="small" style="margin-top:8px;"></div>
+
+    <div class="timer" id="timer">00:00</div>
+
+    <div id="questionArea" class="question-box">
+      <div class="small" id="meta"></div>
+      <div class="question-text" id="questionText">En attente de démarrage…</div>
+      <ul class="options" id="options"></ul>
+      <div class="small" id="openHint" style="display:none;">
+        Question à réponse ouverte – les joueurs écrivent leur réponse sur leur téléphone.
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const startBtn = document.getElementById("startBtn");
+    const timerEl = document.getElementById("timer");
+    const playersInfoEl = document.getElementById("playersInfo");
+    const questionTextEl = document.getElementById("questionText");
+    const optionsEl = document.getElementById("options");
+    const openHintEl = document.getElementById("openHint");
+    const metaEl = document.getElementById("meta");
+    const phaseInfoEl = document.getElementById("phaseInfo");
+
+    function formatTime(sec) {
+      const m = Math.floor(sec / 60);
+      const s = sec % 60;
+      return (m < 10 ? "0" + m : m) + ":" + (s < 10 ? "0" + s : s);
+    }
+
+    socket.on("state", (state) => {
+      render(state);
+    });
+
+    function render(state) {
+      // Timer
+      timerEl.textContent = formatTime(state.remaining || 0);
+      timerEl.classList.remove("warning", "danger");
+      if (state.remaining <= 10 && state.remaining > 0) {
+        timerEl.classList.add("danger");
+      } else if (state.remaining <= 30 && state.remaining > 0) {
+        timerEl.classList.add("warning");
+      }
+
+      // Joueurs
+      if (state.playersCount > 0) {
+        playersInfoEl.textContent = `Joueurs connectés : ${state.playersCount}`;
+      } else {
+        playersInfoEl.textContent = "En attente de joueurs…";
+      }
+
+      // Phase
+      if (!state.started && state.phase === "waiting") {
+        phaseInfoEl.textContent = "Le quiz n'a pas encore commencé.";
+      } else if (state.phase === "question") {
+        phaseInfoEl.innerHTML =
+          `<span class="badge orange">Manche ${state.blockNumber}</span>` +
+          `<span class="badge blue">Question ${state.currentIndex + 1}/${state.totalQuestions}</span>`;
+      } else if (state.phase === "pause") {
+        phaseInfoEl.innerHTML =
+          `<span class="badge green">⏸️ Pause apéro – Manche ${state.blockNumber}</span>`;
+      } else if (state.phase === "finished") {
+        phaseInfoEl.innerHTML = `<span class="badge green">Quiz terminé 🎉</span>`;
+      }
+
+      // Contenu
+      if (state.phase === "question" && state.question) {
+        questionTextEl.textContent = state.question.text;
+        optionsEl.innerHTML = "";
+        openHintEl.style.display = "none";
+
+        if (state.question.type === "mcq" && state.question.options) {
+          state.question.options.forEach((opt, idx) => {
+            const li = document.createElement("li");
+            li.textContent = String.fromCharCode(65 + idx) + ". " + opt;
+            optionsEl.appendChild(li);
+          });
+        } else if (state.question.type === "open") {
+          openHintEl.style.display = "block";
+        }
+
+        metaEl.textContent = "";
+      } else if (state.phase === "pause") {
+        questionTextEl.textContent = "⏸️ Pause apéro ! Servez-vous, discutez, on reprend bientôt…";
+        optionsEl.innerHTML = "";
+        openHintEl.style.display = "none";
+        metaEl.textContent = "";
+      } else if (state.phase === "finished") {
+        questionTextEl.textContent = "Fin du quiz ! 🎉";
+        optionsEl.innerHTML = "";
+        openHintEl.style.display = "none";
+        metaEl.textContent = "";
+      } else if (!state.started) {
+        questionTextEl.textContent = "Clique sur « Démarrer le quiz » quand tout le monde est connecté.";
+        optionsEl.innerHTML = "";
+        openHintEl.style.display = "none";
+        metaEl.textContent = "";
+      }
+    }
+
+    startBtn.addEventListener("click", () => {
+      socket.emit("hostStart");
+    });
+  </script>
+</body>
+</html>
