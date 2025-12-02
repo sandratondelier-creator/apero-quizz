@@ -1,3 +1,4 @@
+// server.js
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -6,85 +7,294 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+// Servir les fichiers du dossier /public
 app.use(express.static("public"));
 
-// ======================
-//  CONFIG QUIZ
-// ======================
+// =======================
+// CONFIG GÉNÉRALE
+// =======================
 
-// Durée d'une question (en secondes)
-const QUESTION_DURATION = 60; // ex : 60 ou 90
+// ⏱️ Durée d'une question (en secondes)
+const QUESTION_DURATION = 60; // change la valeur si tu veux plus/moins
 
-// Durée d'une pause entre blocs (en secondes)
-const PAUSE_DURATION = 300; // 5 minutes
+// Pauses spéciales :
+const PAUSE_AFTER_10 = 5 * 60;   // 5 minutes après la question 10
+const PAUSE_AFTER_20 = 15 * 60;  // 15 minutes après la question 20
+const PAUSE_AFTER_30 = 5 * 60;   // 5 minutes après la question 30
 
-// Pauses toutes les 5 questions
-const QUESTIONS_PER_BLOCK = 5;
+// Normalisation des textes (pour comparer les réponses sans accents / majuscules)
+function normalize(str) {
+  return String(str || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
 
-// ======================
-//  QUESTIONS
-// ======================
-// type: "mcq" (QCM) ou "open" (réponse ouverte)
-// Pour mcq => ajouter "options: [...]"
-// Tu remplaceras ce tableau par tes 40 questions.
+// =======================
+// QUESTIONS – QUIZ SÉRIES & TV
+// =======================
 
 const questions = [
+  // I. QUIZZ HOT & SÉRIES TV
   {
-    type: "mcq",
-    text: "Quelle est la capitale de la France ?",
-    options: ["Lyon", "Marseille", "Paris", "Nice"]
+    type: "open",
+    text: "Dans quelle série un personnage tente maladroitement de séduire tout le monde au bureau, souvent avec des résultats hilarants ?",
+    correctAnswer: "the office"
   },
   {
     type: "open",
-    text: "Cite un cocktail à base de gin."
-  },
-  {
-    type: "mcq",
-    text: "Combien y a-t-il de minutes dans 2 heures ?",
-    options: ["90", "100", "110", "120"]
+    text: "Dans quelle série un politicien obtient autant de pouvoir par le cul que par les urnes ?",
+    correctAnswer: "house of cards"
   },
   {
     type: "open",
-    text: "Dans quelle ville se trouve la Tour Eiffel ?"
+    text: "Dans quelle série une impératrice utilise un citron comme méthode de contraception ?",
+    correctAnswer: "the great"
   },
   {
-    type: "mcq",
-    text: "Quel est l’alcool principal du mojito ?",
-    options: ["Vodka", "Rhum", "Gin", "Tequila"]
+    type: "open",
+    text: "Dans quelle série le couple Ross et Rachel a-t-il accumulé plus de malentendus et de disputes que de vrais moments romantiques ?",
+    correctAnswer: "friends"
+  },
+  {
+    type: "open",
+    text: "Dans Game of Thrones, quel personnage surprend dans la scène la plus gênante son fils en plein ébat avec la reine ?",
+    // on considère qu'ils doivent au moins citer 'bran'
+    correctAnswer: "bran"
   },
 
-  // ➕ ICI tu mets tes autres questions :
-  // { type: "open", text: "Ta question ouverte..." },
-  // { type: "mcq", text: "Ta question QCM...", options: ["A", "B", "C", "D"] },
+  // II. DEVINE LA SÉRIE AVEC UNE SEULE RÉPLIQUE CULTE
+  {
+    type: "open",
+    text: "De quelle série vient ce cri de guerre un peu chelou : « Bazinga ! » ?",
+    correctAnswer: "big bang theory"
+  },
+  {
+    type: "open",
+    text: "Dans quelle série les costumes sont impeccables et la famille plus dangereuse que la mafia italienne : « La famille, c’est sacré. » ?",
+    correctAnswer: "peaky blinders"
+  },
+  {
+    type: "open",
+    text: "De quelle série vient cette phrase qui annonce galères, neige et beaucoup trop de morts : « Winter is coming » ?",
+    correctAnswer: "game of thrones"
+  },
+  {
+    type: "open",
+    text: "Dans quelle série française un chevalier répond « c’est pas faux » avec une assurance totale ?",
+    correctAnswer: "kaamelott"
+  },
+  {
+    type: "open",
+    text: "De quelle série vient la phrase utilisée quand on s’apprête clairement à faire une énorme connerie : « Défi accepté » ?",
+    correctAnswer: "how i met your mother"
+  },
+
+  // III. STRANGER THINGS
+  {
+    type: "open",
+    text: "Dans quelle ville apparemment tranquille mais maudite se déroulent les catastrophes de Stranger Things ?",
+    correctAnswer: "hawkins"
+  },
+  {
+    type: "open",
+    text: "Comment s’appelle la mascotte officielle de l’Envers, spécialiste en disparition d’habitants, dans Stranger Things ?",
+    correctAnswer: "demogorgon"
+  },
+  {
+    type: "open",
+    text: "De quel club de l’école les enfants de Stranger Things sont-ils membres ?",
+    correctAnswer: "audiovisuel"
+  },
+  {
+    type: "open",
+    text: "Quel est le vrai prénom de la fillette la plus badass du monde, connue sous le nom de 11 (Eleven) ?",
+    correctAnswer: "jane"
+  },
+  {
+    type: "open",
+    text: "Quel est le prénom du personnage le plus loyal, au sourire à trois dents et à la casquette vissée sur la tête ?",
+    correctAnswer: "dustin"
+  },
+
+  // IV. SÉRIES MÉDICALES
+  {
+    type: "open",
+    text: "Dans Dr House, à quel petit cachet le médecin le plus insolent de la télé devient-il complètement dépendant à cause de sa jambe ?",
+    correctAnswer: "vicodin"
+  },
+  {
+    type: "open",
+    text: "Dans quelle série tu peux te fiancer, divorcer, tomber dans le coma et perdre ton meilleur ami sur une seule garde de nuit ?",
+    correctAnswer: "grey"
+  },
+  {
+    type: "open",
+    text: "Quelle série dérivée de Grey’s Anatomy suit les aventures d’Addison Montgomery ?",
+    correctAnswer: "private practice"
+  },
+  {
+    type: "open",
+    text: "Par quel surnom le héros de la série médicale Scrubs est-il connu ?",
+    correctAnswer: "j.d"
+  },
+  {
+    type: "open",
+    text: "Dans quelle série un médecin légiste devient-il un tueur en série ?",
+    correctAnswer: "dexter"
+  },
+
+  // V. SITCOMS
+  {
+    type: "open",
+    text: "Dans Friends, quel est le métier de Chandler Bing (celui que ses amis n’arrivent jamais à retenir) ?",
+    // On accepte 'statistique' dans la réponse
+    correctAnswer: "statistique"
+  },
+  {
+    type: "open",
+    text: "Dans The Big Bang Theory, comment s’appelle la voisine et amie des scientifiques, serveuse et actrice en devenir ?",
+    correctAnswer: "penny"
+  },
+  {
+    type: "open",
+    text: "Dans How I Met Your Mother, quel objet emblématique représente les souvenirs amoureux de Ted et Robin ?",
+    correctAnswer: "cor bleu"
+  },
+  {
+    type: "open",
+    text: "Dans Le Prince de Bel-Air, dans quelle ville Will emménage-t-il chez son oncle et sa tante ?",
+    correctAnswer: "los angeles"
+  },
+  {
+    type: "open",
+    text: "Dans Brooklyn Nine-Nine, quel est le nom du capitaine du commissariat du 99e district ?",
+    correctAnswer: "holt"
+  },
+
+  // VI. SPÉCIAL NETFLIX
+  {
+    type: "open",
+    text: "Quelle série lancée en 2013 est le premier show produit par Netflix ?",
+    correctAnswer: "house of cards"
+  },
+  {
+    type: "open",
+    text: "Quelle série Netflix a vu l’arrivée de Gillian Anderson et Olivia Colman dans son casting en 2020 ?",
+    correctAnswer: "the crown"
+  },
+  {
+    type: "open",
+    text: "Quelle série TV Netflix montre les dérives possibles des nouvelles technologies dans notre quotidien ?",
+    correctAnswer: "black mirror"
+  },
+  {
+    type: "open",
+    text: "Quel grand réalisateur de cinéma a signé plusieurs épisodes de la série Mercredi, autour de la famille Addams ?",
+    correctAnswer: "tim burton"
+  },
+  {
+    type: "open",
+    text: "Quelle série Netflix est l’adaptation d’une saga littéraire polonaise sur un chasseur solitaire de monstres mutants ?",
+    correctAnswer: "witcher"
+  },
+
+  // VII. MUSIQUES – TROUVE LA SÉRIE
+  {
+    type: "open",
+    text: "Dans quelle série entend-on la musique : « I’m Always Here » de Jimi Jamison ?",
+    correctAnswer: "alerte a malibu"
+  },
+  {
+    type: "open",
+    text: "Dans quelle série entend-on la musique : « Red Right Hand » de Nick Cave & The Bad Seeds ?",
+    correctAnswer: "peaky blinders"
+  },
+  {
+    type: "open",
+    text: "Dans quelle série entend-on le thème : « Magnum » (Higgins Gentlemen) ?",
+    correctAnswer: "magnum"
+  },
+  {
+    type: "open",
+    text: "Dans quelle série entend-on « Pas le temps » de Faf La Rage ?",
+    correctAnswer: "prison break"
+  },
+  {
+    type: "open",
+    text: "Dans quelle série entend-on « Way Back Then » de Jung Jaeil ?",
+    correctAnswer: "squid game"
+  },
+  {
+    type: "open",
+    text: "Dans quelle série entend-on « How to Save a Life » de The Fray ?",
+    correctAnswer: "grey"
+  },
+  {
+    type: "open",
+    text: "Dans quelle série entend-on le générique « Generic New School » de DJ Maze ?",
+    correctAnswer: "dr house"
+  },
+  {
+    type: "open",
+    text: "Dans quelle série entend-on « The Eyes of the Ranger » ?",
+    correctAnswer: "walker texas ranger"
+  },
+  {
+    type: "open",
+    text: "Dans quelle série entend-on le « Main Title » de Ramin Djawadi ?",
+    correctAnswer: "game of thrones"
+  },
+  {
+    type: "open",
+    text: "Dans quelle série entend-on « Outro » de M83 comme générique ?",
+    correctAnswer: "versailles"
+  }
 ];
 
-// ======================
-//  ÉTAT DU JEU
-// ======================
+const TOTAL_QUESTIONS = questions.length;
+
+// =======================
+// ÉTAT DU JEU
+// =======================
 
 let gameState = {
   started: false,
-  phase: "waiting", // "waiting" | "question" | "pause" | "finished"
-  currentIndex: 0,  // index de la question actuelle
-  remaining: 0,     // secondes restantes
-  players: {}       // socketId -> { name }
+  phase: "waiting", // waiting | question | pause | finished
+  currentIndex: -1,
+  blockNumber: 0,
+  remaining: 0
 };
 
+let players = {};                 // socket.id -> { name, score }
+let answersGiven = {};            // { [questionIndex]: { [socketId]: true } }
+let firstCorrectResponder = {};   // { [questionIndex]: socketId }
 let timer = null;
 
-// ======================
-//  FONCTIONS
-// ======================
+// =======================
+// FONCTIONS UTILITAIRES
+// =======================
+
+function getCurrentQuestion() {
+  if (gameState.currentIndex < 0 || gameState.currentIndex >= questions.length) {
+    return null;
+  }
+  return questions[gameState.currentIndex];
+}
+
+function updateBlockNumber() {
+  if (gameState.currentIndex < 0) {
+    gameState.blockNumber = 0;
+  } else {
+    gameState.blockNumber = Math.floor(gameState.currentIndex / 5) + 1;
+  }
+}
 
 function buildPublicState() {
-  const totalQuestions = questions.length;
-  const idx = gameState.currentIndex;
-  const q = questions[idx] || null;
-  const phase = gameState.phase;
+  const q = getCurrentQuestion();
 
   let questionForClients = null;
-
-  if (phase === "question" && q) {
+  if (gameState.phase === "question" && q) {
     questionForClients = {
       type: q.type,
       text: q.text,
@@ -92,19 +302,20 @@ function buildPublicState() {
     };
   }
 
-  const blockNumber = Math.floor(idx / QUESTIONS_PER_BLOCK) + 1;
-  const inBlockNumber = (idx % QUESTIONS_PER_BLOCK) + 1;
+  const leaderboard = Object.values(players)
+    .map((p) => ({ name: p.name, score: p.score }))
+    .sort((a, b) => b.score - a.score);
 
   return {
     started: gameState.started,
-    phase,
+    phase: gameState.phase,
+    currentIndex: gameState.currentIndex,
+    blockNumber: gameState.blockNumber,
     remaining: gameState.remaining,
-    currentIndex: idx,
-    totalQuestions,
+    totalQuestions: TOTAL_QUESTIONS,
     question: questionForClients,
-    blockNumber,
-    inBlockNumber,
-    playersCount: Object.keys(gameState.players).length
+    playersCount: Object.keys(players).length,
+    leaderboard
   };
 }
 
@@ -112,134 +323,231 @@ function broadcastState() {
   io.emit("state", buildPublicState());
 }
 
-function startQuestion(index) {
-  gameState.phase = "question";
-  gameState.currentIndex = index;
-  gameState.remaining = QUESTION_DURATION;
-  broadcastState();
+function clearTimer() {
+  if (timer) {
+    clearInterval(timer);
+    timer = null;
+  }
 }
 
-function startPause() {
-  gameState.phase = "pause";
-  gameState.remaining = PAUSE_DURATION;
-  broadcastState();
+function startTimer() {
+  clearTimer();
+  timer = setInterval(() => {
+    if (!gameState.started) return;
+    if (gameState.remaining > 0) {
+      gameState.remaining -= 1;
+      broadcastState();
+      return;
+    }
+    nextStep();
+  }, 1000);
 }
 
 function startGame() {
-  if (!questions.length) {
-    console.log("Aucune question configurée.");
-    return;
-  }
-  if (gameState.started) return;
+  if (!questions.length) return;
 
+  console.log("▶️ Démarrage du quiz");
   gameState.started = true;
   gameState.phase = "question";
   gameState.currentIndex = 0;
+  updateBlockNumber();
   gameState.remaining = QUESTION_DURATION;
-  broadcastState();
 
-  if (timer) clearInterval(timer);
-  timer = setInterval(tick, 1000);
+  answersGiven = {};
+  firstCorrectResponder = {};
+  startTimer();
+  broadcastState();
 }
 
-function tick() {
-  if (!gameState.started) return;
-  if (gameState.phase === "finished" || gameState.phase === "waiting") return;
-
-  gameState.remaining -= 1;
-  if (gameState.remaining < 0) gameState.remaining = 0;
-
+function stopGame() {
+  console.log("⛔ Quiz stoppé");
+  gameState.started = false;
+  gameState.phase = "finished";
+  gameState.remaining = 0;
+  clearTimer();
   broadcastState();
+}
 
-  if (gameState.remaining > 0) return;
+// =======================
+// LOGIQUE : PASSAGE DES ÉTAPES
+// =======================
 
-  // Quand le timer arrive à 0 :
-  if (gameState.phase === "question") {
-    const idx = gameState.currentIndex;
-    const total = questions.length;
-    const isLastQuestion = idx >= total - 1;
-    const isEndOfBlock =
-      ((idx + 1) % QUESTIONS_PER_BLOCK === 0) && !isLastQuestion;
+function nextStep() {
+  if (!gameState.started) return;
 
-    if (isLastQuestion) {
-      gameState.phase = "finished";
-      gameState.started = false;
-      broadcastState();
-      clearInterval(timer);
-      timer = null;
-      return;
-    }
-
-    if (isEndOfBlock) {
-      // Pause après ce bloc de 5 questions
-      startPause();
-    } else {
-      // Question suivante
-      startQuestion(idx + 1);
-    }
-  } else if (gameState.phase === "pause") {
-    // Fin de la pause → question suivante
+  // Si on sort d'une pause → aller à la question suivante
+  if (gameState.phase === "pause") {
     const nextIndex = gameState.currentIndex + 1;
+
     if (nextIndex >= questions.length) {
-      gameState.phase = "finished";
-      gameState.started = false;
-      broadcastState();
-      clearInterval(timer);
-      timer = null;
+      stopGame();
       return;
     }
-    startQuestion(nextIndex);
+
+    gameState.currentIndex = nextIndex;
+    gameState.phase = "question";
+    updateBlockNumber();
+    gameState.remaining = QUESTION_DURATION;
+    startTimer();
+    broadcastState();
+    return;
+  }
+
+  // Si on était sur une question
+  if (gameState.phase === "question") {
+    const nextIndex = gameState.currentIndex + 1;
+
+    // Fin du quiz
+    if (nextIndex >= questions.length) {
+      stopGame();
+      return;
+    }
+
+    // PAUSES SPÉCIALES
+    // nextIndex correspond à la prochaine question (Q1 = index 0)
+    // Donc : après Q10 → nextIndex = 10, etc.
+    if (nextIndex === 10) {
+      // Pause après Q10 → 5 min
+      gameState.phase = "pause";
+      gameState.remaining = PAUSE_AFTER_10;
+      startTimer();
+      broadcastState();
+      return;
+    }
+
+    if (nextIndex === 20) {
+      // Pause après Q20 → 15 min
+      gameState.phase = "pause";
+      gameState.remaining = PAUSE_AFTER_20;
+      startTimer();
+      broadcastState();
+      return;
+    }
+
+    if (nextIndex === 30) {
+      // Pause après Q30 → 5 min
+      gameState.phase = "pause";
+      gameState.remaining = PAUSE_AFTER_30;
+      startTimer();
+      broadcastState();
+      return;
+    }
+
+    // Sinon → question suivante
+    gameState.currentIndex = nextIndex;
+    gameState.phase = "question";
+    updateBlockNumber();
+    gameState.remaining = QUESTION_DURATION;
+    startTimer();
+    broadcastState();
   }
 }
 
-// ======================
-//  WEBSOCKETS
-// ======================
+// =======================
+// SOCKETS (JOUEURS + HOST)
+// =======================
 
 io.on("connection", (socket) => {
-  console.log("Nouvelle connexion:", socket.id);
+  console.log("Nouvelle connexion :", socket.id);
 
-  // Envoi de l'état actuel quand quelqu'un arrive
+  // Envoi de l'état actuel
   socket.emit("state", buildPublicState());
 
   // Joueur qui rejoint
   socket.on("joinPlayer", (name) => {
-    const trimmed = String(name || "").trim();
-    if (!trimmed) return;
-    gameState.players[socket.id] = { name: trimmed };
-    console.log(`Joueur connecté : ${trimmed}`);
+    const trimmed = (name || "").toString().trim() || "Joueur";
+    players[socket.id] = {
+      name: trimmed,
+      score: players[socket.id]?.score || 0
+    };
+    console.log("Joueur connecté :", trimmed);
     broadcastState();
-  });
-
-  // L'animateur (host) démarre le quiz
-  socket.on("hostStart", () => {
-    console.log("Host démarre le quiz");
-    startGame();
   });
 
   // Réponse d'un joueur
   socket.on("answer", ({ questionIndex, answer }) => {
-    const playerName = gameState.players[socket.id]?.name || socket.id;
-    console.log(`Réponse de ${playerName} à Q${questionIndex + 1}:`, answer);
-    // Ici tu peux plus tard ajouter un système de points si tu veux
+    const player = players[socket.id];
+    if (!player) return;
+    if (typeof questionIndex !== "number") return;
+    if (questionIndex < 0 || questionIndex >= questions.length) return;
+
+    if (!answersGiven[questionIndex]) {
+      answersGiven[questionIndex] = {};
+    }
+    if (answersGiven[questionIndex][socket.id]) {
+      // a déjà répondu à cette question
+      return;
+    }
+    answersGiven[questionIndex][socket.id] = true;
+
+    const q = questions[questionIndex];
+    if (!q) return;
+
+    // ----- SCORE -----
+    let isCorrect = false;
+
+    if (q.type === "mcq") {
+      isCorrect = (typeof answer === "number" && q.correctIndex === answer);
+    } else if (q.type === "open") {
+      const expected = normalize(q.correctAnswer || "");
+      const userAnswer = normalize(answer || "");
+      isCorrect = expected && userAnswer.includes(expected);
+    }
+
+    if (isCorrect) {
+      // Premier bon répondant ?
+      if (!firstCorrectResponder[questionIndex]) {
+        firstCorrectResponder[questionIndex] = socket.id;
+        player.score += 2; // bonus premier
+        console.log(`${player.name} est le PREMIER à répondre juste à Q${questionIndex + 1} (+2 pts)`);
+      } else {
+        player.score += 1; // bonnes réponses suivantes
+        console.log(`${player.name} a répondu JUSTE à Q${questionIndex + 1} (+1 pt)`);
+      }
+    } else {
+      console.log(`${player.name} a répondu faux ou non validé à Q${questionIndex + 1}`);
+    }
+
+    broadcastState();
   });
 
-  // Déconnexion d'un joueur
+  // Host démarre le quiz
+  socket.on("hostStart", () => {
+    if (gameState.started) return;
+    gameState = {
+      started: false,
+      phase: "waiting",
+      currentIndex: -1,
+      blockNumber: 0,
+      remaining: 0
+    };
+    answersGiven = {};
+    firstCorrectResponder = {};
+    startGame();
+  });
+
+  // Host arrête le quiz
+  socket.on("hostStop", () => {
+    stopGame();
+  });
+
+  // Déconnexion
   socket.on("disconnect", () => {
-    if (gameState.players[socket.id]) {
-      console.log("Joueur déconnecté:", gameState.players[socket.id].name);
-      delete gameState.players[socket.id];
+    if (players[socket.id]) {
+      console.log("Joueur déconnecté :", players[socket.id].name);
+      delete players[socket.id];
       broadcastState();
+    } else {
+      console.log("Socket déconnecté :", socket.id);
     }
   });
 });
 
-// ======================
-//  LANCEMENT SERVEUR
-// ======================
+// =======================
+// LANCEMENT SERVEUR
+// =======================
 
-const PORT = process.env.PORT || 3000;
-
+const PORT = 3000;
 server.listen(PORT, () => {
-  console.log("Serveur lancé sur le port " + PORT);
+  console.log("Serveur lancé sur http://localhost:" + PORT);
 });
