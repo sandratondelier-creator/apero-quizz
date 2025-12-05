@@ -4,69 +4,99 @@
   <meta charset="UTF-8" />
   <title>Apéro Quiz – Joueur</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- iPhone : mode pseudo appli -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Apéro Quiz">
+
   <style>
     body {
-      background: #0f172a;
+      background: #020617;
       color: white;
-      font-family: system-ui;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       padding: 20px;
+      margin: 0;
     }
+
     #card {
-      max-width: 400px;
-      margin: auto;
-      background: #1e293b;
+      max-width: 420px;
+      margin: 0 auto;
+      background: #0f172a;
       padding: 20px;
-      border-radius: 16px;
-      border: 1px solid #334155;
+      border-radius: 18px;
+      border: 1px solid #1e293b;
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.6);
     }
+
+    h2 {
+      margin-top: 0;
+      text-align: center;
+      font-size: 1.5rem;
+    }
+
     #nameInput, #openInput {
       width: 100%;
-      padding: 10px;
+      padding: 12px;
       border-radius: 12px;
       border: none;
       margin-bottom: 10px;
+      font-size: 1rem;
     }
+
     button {
       width: 100%;
-      padding: 10px;
-      border-radius: 12px;
+      padding: 12px;
+      border-radius: 999px;
       border: none;
-      background: #3b82f6;
-      color: white;
       font-size: 1rem;
-      margin-bottom: 10px;
+      font-weight: 600;
       cursor: pointer;
+      margin-bottom: 10px;
+      background: #22c55e;
+      color: #022c22;
     }
+
+    button:active {
+      transform: translateY(1px);
+    }
+
     #timer {
       text-align: center;
       font-size: 2rem;
-      margin-bottom: 10px;
+      margin-bottom: 12px;
+      font-weight: 800;
     }
+
     #instruction {
       text-align: center;
-      margin-bottom: 10px;
+      margin-bottom: 12px;
       color: #cbd5f5;
-      font-size: 1rem;
+      font-size: 0.95rem;
     }
+
     #status {
       text-align: center;
       color: #a5b4fc;
       margin-top: 10px;
+      min-height: 1.2em;
     }
+
     .opt-btn {
       width: 100%;
       padding: 12px;
       margin-bottom: 8px;
-      border-radius: 12px;
-      background: #334155;
+      border-radius: 14px;
+      background: #1e293b;
       color: white;
       border: none;
       text-align: left;
       font-size: 1rem;
     }
+
     .opt-btn:active {
       background: #22c55e;
-      color: black;
+      color: #022c22;
     }
   </style>
 </head>
@@ -76,7 +106,7 @@
     <!-- INSCRIPTION -->
     <div id="joinArea">
       <h2>Rejoindre le Quiz</h2>
-      <input id="nameInput" placeholder="Ton prénom" />
+      <input id="nameInput" placeholder="Ton prénom" autocomplete="off" />
       <button id="joinBtn">Rejoindre</button>
     </div>
 
@@ -84,18 +114,18 @@
     <div id="gameArea" style="display:none;">
       <div id="timer">00:00</div>
 
-      <!-- Aucun affichage de la question -->
+      <!-- On NE montre PAS la question ici -->
       <div id="instruction">
         👀 Regarde l'écran géant<br>
-        ✍️ Réponds ici !
+        ✍️ Réponds ici sur ton téléphone
       </div>
 
-      <!-- MCQ -->
+      <!-- QCM -->
       <div id="options"></div>
 
       <!-- Réponse ouverte -->
       <div id="openArea" style="display:none;">
-        <input id="openInput" placeholder="Tape ta réponse…" />
+        <input id="openInput" placeholder="Tape ta réponse…" autocomplete="off" />
         <button id="sendOpenBtn">Envoyer</button>
       </div>
 
@@ -130,34 +160,58 @@
       return (m < 10 ? "0" + m : m) + ":" + (s < 10 ? "0" + s : s);
     }
 
-    joinBtn.addEventListener("click", () => {
-      const name = nameInput.value.trim();
-      if (!name) return alert("Entre un prénom");
-      socket.emit("joinPlayer", name);
+    function doJoin(name) {
+      const trimmed = (name || "").trim();
+      if (!trimmed) return;
+
+      localStorage.setItem("playerName", trimmed);
+      socket.emit("joinPlayer", trimmed);
+
       joined = true;
       joinArea.style.display = "none";
       gameArea.style.display = "block";
-      statusEl.textContent = "En attente du lancement…";
+      statusEl.textContent = "Connecté, en attente du lancement…";
+    }
+
+    joinBtn.addEventListener("click", () => {
+      doJoin(nameInput.value);
+    });
+
+    // 🔁 Quand la connexion se (re)fait, on renvoie automatiquement le prénom
+    socket.on("connect", () => {
+      const saved = localStorage.getItem("playerName");
+      if (saved) {
+        nameInput.value = saved;
+        doJoin(saved);
+      }
     });
 
     socket.on("state", (state) => {
       timerEl.textContent = formatTime(state.remaining || 0);
-      if (!joined) return;
+
+      if (!joined) {
+        // mais on met quand même le timer à jour
+        return;
+      }
 
       if (state.phase === "waiting") {
-        statusEl.textContent = "En attente…";
+        statusEl.textContent = "En attente du démarrage…";
+        optionsEl.innerHTML = "";
+        openArea.style.display = "none";
         return;
       }
 
       if (state.phase === "pause") {
-        statusEl.textContent = "Pause ⏸️";
-        openArea.style.display = "none";
+        statusEl.textContent = "⏸️ Pause, le quiz reprend bientôt…";
         optionsEl.innerHTML = "";
+        openArea.style.display = "none";
         return;
       }
 
       if (state.phase === "finished") {
-        statusEl.textContent = "Quiz terminé 🎉";
+        statusEl.textContent = "🎉 Quiz terminé, merci d'avoir joué !";
+        optionsEl.innerHTML = "";
+        openArea.style.display = "none";
         return;
       }
 
@@ -165,14 +219,15 @@
         if (currentQuestionIndex !== state.currentIndex) {
           currentQuestionIndex = state.currentIndex;
           alreadyAnswered = false;
-          statusEl.textContent = "Réponds maintenant 🎯";
           optionsEl.innerHTML = "";
           openInput.value = "";
+          statusEl.textContent = "Réponds à la question en regardant l'écran géant 🔥";
         }
 
         if (state.question.type === "mcq") {
           openArea.style.display = "none";
           optionsEl.innerHTML = "";
+
           state.question.options.forEach((opt, idx) => {
             const btn = document.createElement("button");
             btn.className = "opt-btn";
@@ -184,11 +239,12 @@
                 questionIndex: currentQuestionIndex,
                 answer: idx
               });
-              statusEl.textContent = "Réponse envoyée ✔️";
+              statusEl.textContent = "✅ Réponse envoyée !";
             });
             optionsEl.appendChild(btn);
           });
         } else {
+          // question ouverte
           optionsEl.innerHTML = "";
           openArea.style.display = "block";
           sendOpenBtn.onclick = () => {
@@ -198,7 +254,7 @@
               questionIndex: currentQuestionIndex,
               answer: openInput.value
             });
-            statusEl.textContent = "Réponse envoyée ✔️";
+            statusEl.textContent = "✅ Réponse envoyée !";
           };
         }
       }
