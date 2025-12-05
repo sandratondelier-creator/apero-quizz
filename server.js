@@ -14,15 +14,14 @@ app.use(express.static("public"));
 // CONFIG GÉNÉRALE
 // =======================
 
-// ⏱️ Durée d'une question (en secondes)
-const QUESTION_DURATION = 60; // change la valeur si tu veux plus/moins
+const QUESTION_DURATION = 40; // durée d'une question en secondes
 
 // Pauses spéciales :
 const PAUSE_AFTER_10 = 5 * 60;   // 5 minutes après la question 10
 const PAUSE_AFTER_20 = 15 * 60;  // 15 minutes après la question 20
 const PAUSE_AFTER_30 = 5 * 60;   // 5 minutes après la question 30
 
-// Normalisation des textes (pour comparer les réponses sans accents / majuscules)
+// Normalisation (pour comparer les réponses sans accents / majuscules)
 function normalize(str) {
   return String(str || "")
     .normalize("NFD")
@@ -31,7 +30,7 @@ function normalize(str) {
 }
 
 // =======================
-// QUESTIONS – QUIZ SÉRIES & TV
+// QUESTIONS – SÉRIES & TV
 // =======================
 
 const questions = [
@@ -59,7 +58,6 @@ const questions = [
   {
     type: "open",
     text: "Dans Game of Thrones, quel personnage surprend dans la scène la plus gênante son fils en plein ébat avec la reine ?",
-    // on considère qu'ils doivent au moins citer 'bran'
     correctAnswer: "bran"
   },
 
@@ -148,7 +146,6 @@ const questions = [
   {
     type: "open",
     text: "Dans Friends, quel est le métier de Chandler Bing (celui que ses amis n’arrivent jamais à retenir) ?",
-    // On accepte 'statistique' dans la réponse
     correctAnswer: "statistique"
   },
   {
@@ -255,8 +252,14 @@ const questions = [
 const TOTAL_QUESTIONS = questions.length;
 
 // =======================
-// ÉTAT DU JEU
+// ÉTAT DU JEU & JOUEURS
 // =======================
+
+// joueurs : clé = prénom normalisé, valeur = { name, score }
+let players = {};
+
+// mapping socket.id -> clé du joueur (prénom normalisé)
+let socketToPlayerKey = {};
 
 let gameState = {
   started: false,
@@ -266,9 +269,8 @@ let gameState = {
   remaining: 0
 };
 
-let players = {};                 // socket.id -> { name, score }
-let answersGiven = {};            // { [questionIndex]: { [socketId]: true } }
-let firstCorrectResponder = {};   // { [questionIndex]: socketId }
+let answersGiven = {};          // { [questionIndex]: { [playerKey]: true } }
+let firstCorrectResponder = {}; // { [questionIndex]: playerKey }
 let timer = null;
 
 // =======================
@@ -369,13 +371,13 @@ function stopGame() {
 }
 
 // =======================
-// LOGIQUE : PASSAGE DES ÉTAPES
+// LOGIQUE DE FLUX
 // =======================
 
 function nextStep() {
   if (!gameState.started) return;
 
-  // Si on sort d'une pause → aller à la question suivante
+  // sortie de pause → question suivante
   if (gameState.phase === "pause") {
     const nextIndex = gameState.currentIndex + 1;
 
@@ -393,21 +395,17 @@ function nextStep() {
     return;
   }
 
-  // Si on était sur une question
+  // passage question → ?
   if (gameState.phase === "question") {
     const nextIndex = gameState.currentIndex + 1;
 
-    // Fin du quiz
     if (nextIndex >= questions.length) {
       stopGame();
       return;
     }
 
-    // PAUSES SPÉCIALES
-    // nextIndex correspond à la prochaine question (Q1 = index 0)
-    // Donc : après Q10 → nextIndex = 10, etc.
+    // Pauses spéciales
     if (nextIndex === 10) {
-      // Pause après Q10 → 5 min
       gameState.phase = "pause";
       gameState.remaining = PAUSE_AFTER_10;
       startTimer();
@@ -416,7 +414,6 @@ function nextStep() {
     }
 
     if (nextIndex === 20) {
-      // Pause après Q20 → 15 min
       gameState.phase = "pause";
       gameState.remaining = PAUSE_AFTER_20;
       startTimer();
@@ -425,7 +422,6 @@ function nextStep() {
     }
 
     if (nextIndex === 30) {
-      // Pause après Q30 → 5 min
       gameState.phase = "pause";
       gameState.remaining = PAUSE_AFTER_30;
       startTimer();
@@ -444,46 +440,52 @@ function nextStep() {
 }
 
 // =======================
-// SOCKETS (JOUEURS + HOST)
+// SOCKETS
 // =======================
 
 io.on("connection", (socket) => {
   console.log("Nouvelle connexion :", socket.id);
 
-  // Envoi de l'état actuel
+  // envoie l'état au nouveau venu
   socket.emit("state", buildPublicState());
 
-  // Joueur qui rejoint
-  socket.on("joinPlayer", (name) => {
-    const trimmed = (name || "").toString().trim() || "Joueur";
-    players[socket.id] = {
-      name: trimmed,
-      score: players[socket.id]?.score || 0
-    };
-    console.log("Joueur connecté :", trimmed);
+  // Joueur rejoint
+  socket.on("joinPlayer", (nameRaw) => {
+    const name = (nameRaw || "").toString().trim() || "Joueur";
+    const key = normalize(name);
+
+    // crée le joueur si besoin
+    if (!players[key]) {
+      players[key] = { name, score: 0 };
+      console.log("Nouveau joueur :", name);
+    } else {
+      console.log("Reconnexion du joueur :", name);
+    }
+
+    socketToPlayerKey[socket.id] = key;
     broadcastState();
   });
 
   // Réponse d'un joueur
   socket.on("answer", ({ questionIndex, answer }) => {
-    const player = players[socket.id];
-    if (!player) return;
+    const key = socketToPlayerKey[socket.id];
+    if (!key || !players[key]) return;
+    const player = players[key];
+
     if (typeof questionIndex !== "number") return;
     if (questionIndex < 0 || questionIndex >= questions.length) return;
 
     if (!answersGiven[questionIndex]) {
       answersGiven[questionIndex] = {};
     }
-    if (answersGiven[questionIndex][socket.id]) {
-      // a déjà répondu à cette question
-      return;
+    if (answersGiven[questionIndex][key]) {
+      return; // a déjà répondu
     }
-    answersGiven[questionIndex][socket.id] = true;
+    answersGiven[questionIndex][key] = true;
 
     const q = questions[questionIndex];
     if (!q) return;
 
-    // ----- SCORE -----
     let isCorrect = false;
 
     if (q.type === "mcq") {
@@ -495,23 +497,22 @@ io.on("connection", (socket) => {
     }
 
     if (isCorrect) {
-      // Premier bon répondant ?
       if (!firstCorrectResponder[questionIndex]) {
-        firstCorrectResponder[questionIndex] = socket.id;
-        player.score += 2; // bonus premier
+        firstCorrectResponder[questionIndex] = key;
+        player.score += 2; // premier
         console.log(`${player.name} est le PREMIER à répondre juste à Q${questionIndex + 1} (+2 pts)`);
       } else {
-        player.score += 1; // bonnes réponses suivantes
+        player.score += 1;
         console.log(`${player.name} a répondu JUSTE à Q${questionIndex + 1} (+1 pt)`);
       }
     } else {
-      console.log(`${player.name} a répondu faux ou non validé à Q${questionIndex + 1}`);
+      console.log(`${player.name} a répondu faux à Q${questionIndex + 1}`);
     }
 
     broadcastState();
   });
 
-  // Host démarre le quiz
+  // Host démarre
   socket.on("hostStart", () => {
     if (gameState.started) return;
     gameState = {
@@ -526,20 +527,15 @@ io.on("connection", (socket) => {
     startGame();
   });
 
-  // Host arrête le quiz
+  // Host stoppe
   socket.on("hostStop", () => {
     stopGame();
   });
 
-  // Déconnexion
   socket.on("disconnect", () => {
-    if (players[socket.id]) {
-      console.log("Joueur déconnecté :", players[socket.id].name);
-      delete players[socket.id];
-      broadcastState();
-    } else {
-      console.log("Socket déconnecté :", socket.id);
-    }
+    // ON NE SUPPRIME PLUS LES JOUEURS (leurs scores restent)
+    delete socketToPlayerKey[socket.id];
+    console.log("Socket déconnecté :", socket.id);
   });
 });
 
@@ -547,7 +543,7 @@ io.on("connection", (socket) => {
 // LANCEMENT SERVEUR
 // =======================
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log("Serveur lancé sur http://localhost:" + PORT);
 });
